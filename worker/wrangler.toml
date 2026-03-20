@@ -1,0 +1,14 @@
+name = "qr-kiosk-relay"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+workers_dev = true
+preview_urls = true
+
+kv_namespaces = [
+  { binding = "SCANS", id = "c324711982fe4aba89ae9f284ab75975", preview_id = "2e3a0b2d52f74c92a619f00c9c33d6e6" }
+]
+
+[vars]
+CMS_USERNAME = "admin"
+CMS_ALLOWED_ORIGIN = "*"
+CMS_SESSION_TTL_SECONDS = "43200"

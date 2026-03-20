@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QR Kiosk CMS</title>
+  <style>
+    :root {
+      --bg: #f3f5f6;
+      --ink: #12202b;
+      --card: #ffffff;
+      --line: #d7dde2;
+      --action: #1d6fa8;
+      --danger: #992222;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #f6f8f9 0%, #e9eef1 100%);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .wrap { max-width: 980px; margin: 2rem auto; padding: 0 1rem 2rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    h1, h2 { margin: 0 0 0.8rem; }
+    .row { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; }
+    input, button {
+      font-size: 14px;
+      padding: 0.6rem 0.7rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    input[type=text], input[type=password], input[type=number] { min-width: 260px; }
+    button { cursor: pointer; }
+    .primary { background: var(--action); border-color: var(--action); color: #fff; }
+    .danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .hidden { display: none; }
+    .status { margin-top: 0.5rem; font-size: 14px; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>QR Kiosk CMS</h1>
+
+    <div class="card" id="connect-card">
+      <h2>Connect</h2>
+      <div class="row">
+        <input id="worker-base" type="text" placeholder="Worker base URL (https://...workers.dev)" />
+        <input id="device-id" type="text" placeholder="Device ID (KIOSK123)" />
+      </div>
+      <p class="status" id="connect-status"></p>
+    </div>
+
+    <div class="card" id="login-card">
+      <h2>Login</h2>
+      <div class="row">
+        <input id="username" type="text" placeholder="Username" />
+        <input id="password" type="password" placeholder="Password" />
+        <button class="primary" id="login-btn">Sign In</button>
+      </div>
+      <p class="status" id="login-status"></p>
+    </div>
+
+    <div id="cms-panel" class="hidden">
+      <div class="card">
+        <h2>Settings</h2>
+        <div class="row">
+          <input id="website-url" type="text" placeholder="Website URL on scan" />
+          <input id="slide-seconds" type="number" min="1" step="1" placeholder="Slide seconds" />
+          <button class="primary" id="save-settings">Save Settings</button>
+          <button id="refresh-state">Refresh</button>
+          <button id="logout-btn">Log Out</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Upload Slides</h2>
+        <div class="row">
+          <input id="upload-files" type="file" multiple accept="image/*" />
+          <button class="primary" id="upload-btn">Upload</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Slides</h2>
+        <ul id="image-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const storageKeys = {
+      base: "qrCmsBaseUrl",
+      device: "qrCmsDeviceId",
+      token: "qrCmsToken",
+    };
+
+    const state = {
+      baseUrl: localStorage.getItem(storageKeys.base) || "",
+      deviceId: localStorage.getItem(storageKeys.device) || "",
+      token: localStorage.getItem(storageKeys.token) || "",
+    };
+
+    const el = {
+      workerBase: document.getElementById("worker-base"),
+      deviceId: document.getElementById("device-id"),
+      connectStatus: document.getElementById("connect-status"),
+      username: document.getElementById("username"),
+      password: document.getElementById("password"),
+      loginStatus: document.getElementById("login-status"),
+      loginBtn: document.getElementById("login-btn"),
+      cmsPanel: document.getElementById("cms-panel"),
+      websiteUrl: document.getElementById("website-url"),
+      slideSeconds: document.getElementById("slide-seconds"),
+      saveSettings: document.getElementById("save-settings"),
+      refreshState: document.getElementById("refresh-state"),
+      logoutBtn: document.getElementById("logout-btn"),
+      uploadFiles: document.getElementById("upload-files"),
+      uploadBtn: document.getElementById("upload-btn"),
+      imageList: document.getElementById("image-list"),
+    };
+
+    el.workerBase.value = state.baseUrl;
+    el.deviceId.value = state.deviceId;
+
+    function setStatus(target, message, isError = false) {
+      target.textContent = message;
+      target.style.color = isError ? "#a40000" : "#146229";
+    }
+
+    function getBaseUrl() {
+      return el.workerBase.value.trim().replace(/\/$/, "");
+    }
+
+    function getDeviceId() {
+      return el.deviceId.value.trim();
+    }
+
+    function persistConnection() {
+      state.baseUrl = getBaseUrl();
+      state.deviceId = getDeviceId();
+      localStorage.setItem(storageKeys.base, state.baseUrl);
+      localStorage.setItem(storageKeys.device, state.deviceId);
+      if (!state.baseUrl || !state.deviceId) {
+        setStatus(el.connectStatus, "Worker URL and Device ID are required.", true);
+        return false;
+      }
+      setStatus(el.connectStatus, "Connected config saved.");
+      return true;
+    }
+
+    async function cmsFetch(path, options = {}) {
+      if (!persistConnection()) {
+        throw new Error("missing_connection");
+      }
+      const url = `${state.baseUrl}${path}${path.includes("?") ? "&" : "?"}device=${encodeURIComponent(state.deviceId)}`;
+      const headers = Object.assign({}, options.headers || {});
+      if (state.token) {
+        headers.Authorization = `Bearer ${state.token}`;
+      }
+      const response = await fetch(url, { ...options, headers });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = data.error || `http_${response.status}`;
+        throw new Error(error);
+      }
+      return data;
+    }
+
+    function renderImages(images) {
+      el.imageList.innerHTML = "";
+      if (!images.length) {
+        const li = document.createElement("li");
+        li.textContent = "No slides uploaded yet.";
+        el.imageList.appendChild(li);
+        return;
+      }
+      images.forEach((item) => {
+        const li = document.createElement("li");
+        li.style.marginBottom = "0.6rem";
+        const name = document.createElement("span");
+        name.textContent = item.name;
+        const del = document.createElement("button");
+        del.textContent = "Delete";
+        del.className = "danger";
+        del.style.marginLeft = "0.7rem";
+        del.onclick = async () => {
+          try {
+            await cmsFetch("/cms/delete", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ filename: item.name }),
+            });
+            await loadState();
+          } catch (err) {
+            setStatus(el.loginStatus, `Delete failed: ${err.message}`, true);
+          }
+        };
+        li.appendChild(name);
+        li.appendChild(del);
+        el.imageList.appendChild(li);
+      });
+    }
+
+    async function loadState() {
+      const data = await cmsFetch("/cms/state", { method: "GET" });
+      el.websiteUrl.value = data.website_url || "";
+      el.slideSeconds.value = data.slide_seconds || 5;
+      renderImages(Array.isArray(data.images) ? data.images : []);
+    }
+
+    async function doLogin() {
+      if (!persistConnection()) {
+        return;
+      }
+      try {
+        const response = await fetch(`${state.baseUrl}/cms/login`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            username: el.username.value.trim(),
+            password: el.password.value,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.token) {
+          throw new Error(data.error || "invalid_login");
+        }
+
+        state.token = data.token;
+        localStorage.setItem(storageKeys.token, state.token);
+        el.cmsPanel.classList.remove("hidden");
+        setStatus(el.loginStatus, "Logged in.");
+        await loadState();
+      } catch (err) {
+        setStatus(el.loginStatus, `Login failed: ${err.message}`, true);
+      }
+    }
+
+    async function saveSettings() {
+      try {
+        await cmsFetch("/cms/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            website_url: el.websiteUrl.value.trim(),
+            slide_seconds: Number(el.slideSeconds.value || 5),
+          }),
+        });
+        await loadState();
+        setStatus(el.loginStatus, "Settings saved.");
+      } catch (err) {
+        setStatus(el.loginStatus, `Save failed: ${err.message}`, true);
+      }
+    }
+
+    async function uploadSlides() {
+      const files = el.uploadFiles.files;
+      if (!files || !files.length) {
+        setStatus(el.loginStatus, "Select one or more images first.", true);
+        return;
+      }
+      const form = new FormData();
+      Array.from(files).forEach((file) => form.append("images", file));
+      try {
+        await cmsFetch("/cms/upload", { method: "POST", body: form });
+        el.uploadFiles.value = "";
+        await loadState();
+        setStatus(el.loginStatus, "Upload complete.");
+      } catch (err) {
+        setStatus(el.loginStatus, `Upload failed: ${err.message}`, true);
+      }
+    }
+
+    function logout() {
+      state.token = "";
+      localStorage.removeItem(storageKeys.token);
+      el.cmsPanel.classList.add("hidden");
+      setStatus(el.loginStatus, "Logged out.");
+    }
+
+    el.loginBtn.addEventListener("click", doLogin);
+    el.saveSettings.addEventListener("click", saveSettings);
+    el.uploadBtn.addEventListener("click", uploadSlides);
+    el.refreshState.addEventListener("click", async () => {
+      try {
+        await loadState();
+        setStatus(el.loginStatus, "State refreshed.");
+      } catch (err) {
+        setStatus(el.loginStatus, `Refresh failed: ${err.message}`, true);
+      }
+    });
+    el.logoutBtn.addEventListener("click", logout);
+    el.workerBase.addEventListener("change", persistConnection);
+    el.deviceId.addEventListener("change", persistConnection);
+
+    if (state.token) {
+      el.cmsPanel.classList.remove("hidden");
+      loadState().catch(() => {
+        logout();
+      });
+    }
+  </script>
+</body>
+</html>

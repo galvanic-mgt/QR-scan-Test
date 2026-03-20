@@ -1,0 +1,13 @@
+{
+  "device_id": "KIOSK123",
+  "poll_url": "http://127.0.0.1:8787/poll",
+  "website_url": "https://example.com",
+  "photos_dir": "photos",
+  "slide_seconds": 5,
+  "poll_seconds": 2,
+  "fullscreen": true,
+  "cms_settings_file": "cms_settings.json",
+  "cms_public_url": "http://127.0.0.1:8787/cms/public",
+  "cms_sync_seconds": 5,
+  "cms_sync_state_file": "cms_sync_state.json"
+}
